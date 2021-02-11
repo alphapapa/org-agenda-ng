@@ -1669,6 +1669,11 @@ parseable by `parse-time-string' which may omit the time value."
   (org-ql--predicate-ts :from from :to to :regexp org-closed-time-regexp :match-group 1
                         :limit (line-end-position 2)))
 
+(org-ql-defpred blocked ()
+  "Return non-nil if the entry is blocked."
+  :body
+  (org-entry-blocked-p))
+
 (org-ql-defpred deadline (&key from to _on)
   ;; The underscore before `on' prevents "unused lexical variable"
   ;; warnings, because we pre-process that argument in a macro before
