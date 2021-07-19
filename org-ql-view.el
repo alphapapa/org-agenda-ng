@@ -1049,38 +1049,55 @@ current buffer.  Otherwise BUFFERS-FILES is returned unchanged."
        "org-agenda-files")
       ((and (pred bufferp) (guard (buffer-file-name buffers-files)))
        (buffer-file-name buffers-files))
+      ((pred bufferp)
+       (buffer-name buffers-files))
       (_ buffers-files))))
 
 (defun org-ql-view--complete-buffers-files ()
-  "Return value for `org-ql-view-buffers-files' using completion."
-  (cl-labels ((initial-input
-               () (when org-ql-view-buffers-files
-                    (org-ql-view--contract-buffers-files
-                     org-ql-view-buffers-files))))
-    (if (and org-ql-view-buffers-files
-             (bufferp org-ql-view-buffers-files))
-        ;; Buffers can't be input by name, so if the default value is a buffer, just use it.
-        ;; TODO: Find a way to fix this.
+  "Return value for `org-ql-view-buffers-files' using completion.
+When `org-ql-view-buffers-files' cannot be contracted to a string
+representation `org-ql-view-buffers-files' is returned."
+  (let* ((contracted-org-ql-view-buffers-files
+          (when org-ql-view-buffers-files
+            (org-ql-view--contract-buffers-files
+             org-ql-view-buffers-files)))
+         (initial-input (pcase contracted-org-ql-view-buffers-files
+                          ('nil nil)
+                          ('string contracted-org-ql-view-buffers-files)
+                          ((pred listp)
+                           (mapconcat 'identity contracted-org-ql-view-buffers-files
+                                      ","))
+                          (_ (format "%s" contracted-org-ql-view-buffers-files))))
+         (completion-read-result (completing-read-multiple
+                                  "Buffers/Files: "
+                                  (list 'buffer 'org-agenda-files 'org-directory 'all)
+                                  nil nil initial-input)))
+    (if (equalp completion-read-result initial-input)
         org-ql-view-buffers-files
-      (org-ql-view--expand-buffers-files
-       (completing-read "Buffers/Files: "
-                        (list 'buffer 'org-agenda-files 'org-directory 'all)
-                        nil nil (initial-input))))))
+      (org-ql-view--expand-buffers-files completion-read-result))))
 
 (defun org-ql-view--expand-buffers-files (buffers-files)
   "Return BUFFERS-FILES expanded to a list of files or buffers.
 The counterpart to `org-ql-view--contract-buffers-files'."
-  (pcase-exhaustive buffers-files
-    ("all" (--select (equal (buffer-local-value 'major-mode it) 'org-mode)
-                     (buffer-list)))
-    ("org-agenda-files" (org-agenda-files))
-    ("org-directory" (org-ql-search-directories-files))
-    ((or "" "buffer") (current-buffer))
-    ((pred bufferp) buffers-files)
-    ((pred listp) buffers-files)
-    ;; A single filename.
-    ((pred stringp) buffers-files)))
-
+  (cl-labels
+      ((process-buffers-files-elements
+        (_buffers-files)
+        (pcase-exhaustive _buffers-files
+          ("all" (--select (equal (buffer-local-value 'major-mode it) 'org-mode)
+                           (buffer-list)))
+          ("org-agenda-files" (org-agenda-files))
+          ("org-directory" (org-ql-search-directories-files))
+          ((or "" "buffer") (current-buffer))
+          ((pred bufferp) (list _buffers-files))
+          ((pred listp) (list _buffers-files))
+          ;; A single filename.
+          ((pred stringp) (list _buffers-files)))))
+    (remove-duplicates (-mapcat #'process-buffers-files-elements
+                                (remove nil (if (listp buffers-files)
+                                                buffers-files
+                                              (list buffer-files))))
+                        :test 'equalp)))
+       
 (defun org-ql-view--complete-super-groups ()
   "Return value for `org-ql-view-super-groups' using completion."
   (when (bound-and-true-p org-super-agenda-auto-selector-keywords)
